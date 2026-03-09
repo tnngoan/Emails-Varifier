@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Email Verifier</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0f1117;
+      --surface:   #1a1d27;
+      --border:    #2e3142;
+      --accent:    #6c6ef5;
+      --accent-h:  #5254d4;
+      --success:   #22c55e;
+      --danger:    #ef4444;
+      --warn:      #f59e0b;
+      --text:      #e2e4f0;
+      --muted:     #7c82a3;
+      --radius:    12px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 48px 16px;
+    }
+
+    .card {
+      width: 100%;
+      max-width: 680px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 36px;
+    }
+
+    h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      margin-bottom: 6px;
+      letter-spacing: -0.5px;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin-bottom: 32px;
+    }
+
+    /* ── Drop zone ────────────────────────────────────────────────── */
+    #drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 40px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+    }
+    #drop-zone:hover,
+    #drop-zone.drag-over {
+      border-color: var(--accent);
+      background: rgba(108,110,245,0.06);
+    }
+    #drop-zone input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer;
+    }
+    .drop-icon { font-size: 2.4rem; margin-bottom: 10px; }
+    .drop-label { font-size: 0.95rem; color: var(--muted); }
+    .drop-label strong { color: var(--accent); }
+
+    /* ── File info ────────────────────────────────────────────────── */
+    #file-info {
+      display: none;
+      align-items: center;
+      gap: 12px;
+      margin-top: 16px;
+      padding: 14px 16px;
+      background: rgba(108,110,245,0.08);
+      border: 1px solid rgba(108,110,245,0.25);
+      border-radius: 8px;
+      font-size: 0.88rem;
+    }
+    #file-info .icon { font-size: 1.4rem; }
+    #file-info .meta { flex: 1; }
+    #file-info .name { font-weight: 600; word-break: break-all; }
+    #file-info .count { color: var(--muted); margin-top: 2px; }
+    #clear-btn {
+      background: none; border: none; cursor: pointer;
+      color: var(--muted); font-size: 1.1rem; padding: 4px;
+      border-radius: 4px; transition: color 0.15s;
+    }
+    #clear-btn:hover { color: var(--danger); }
+
+    /* ── Column picker ────────────────────────────────────────────── */
+    #col-picker {
+      display: none;
+      margin-top: 14px;
+    }
+    #col-picker label {
+      display: block;
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    #col-picker select {
+      width: 100%;
+      padding: 8px 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+
+    /* ── Validate button ──────────────────────────────────────────── */
+    #validate-btn {
+      display: block;
+      width: 100%;
+      margin-top: 20px;
+      padding: 13px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, opacity 0.2s;
+    }
+    #validate-btn:hover:not(:disabled) { background: var(--accent-h); }
+    #validate-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    /* ── Progress ─────────────────────────────────────────────────── */
+    #progress-section {
+      display: none;
+      margin-top: 28px;
+    }
+    .section-title {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+    .progress-bar-wrap {
+      background: var(--bg);
+      border-radius: 99px;
+      height: 8px;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 99px;
+      transition: width 0.4s ease;
+      width: 0%;
+    }
+    .progress-meta {
+      margin-top: 8px;
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.83rem;
+      color: var(--muted);
+    }
+    #status-text { font-weight: 500; }
+
+    /* ── Stats grid ───────────────────────────────────────────────── */
+    #stats-grid {
+      display: none;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 12px;
+      margin-top: 20px;
+    }
+    .stat-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+      text-align: center;
+    }
+    .stat-card .num {
+      font-size: 1.6rem;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .stat-card .lbl {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .c-valid   { color: var(--success); }
+    .c-invalid { color: var(--danger); }
+    .c-warn    { color: var(--warn); }
+    .c-muted   { color: var(--muted); }
+
+    /* ── Download buttons ─────────────────────────────────────────── */
+    .download-row {
+      display: none;
+      gap: 10px;
+      margin-top: 20px;
+    }
+    .dl-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      flex: 1;
+      padding: 13px 10px;
+      border-radius: 8px;
+      font-size: 0.92rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+      text-decoration: none;
+      text-align: center;
+    }
+    #download-good-btn {
+      background: rgba(34,197,94,0.12);
+      color: var(--success);
+      border: 1px solid rgba(34,197,94,0.35);
+    }
+    #download-good-btn:hover { background: rgba(34,197,94,0.2); }
+    #download-bad-btn {
+      background: rgba(239,68,68,0.10);
+      color: var(--danger);
+      border: 1px solid rgba(239,68,68,0.30);
+    }
+    #download-bad-btn:hover { background: rgba(239,68,68,0.18); }
+
+    /* ── Typo warning ─────────────────────────────────────────────── */
+    #typo-banner {
+      display: none;
+      margin-top: 14px;
+      padding: 12px 16px;
+      background: rgba(245,158,11,0.1);
+      border: 1px solid rgba(245,158,11,0.35);
+      border-radius: 8px;
+      font-size: 0.85rem;
+    }
+    #typo-banner strong { color: var(--warn); }
+    .typo-row { margin-top: 4px; }
+    .typo-row code {
+      background: rgba(255,255,255,0.06);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-family: monospace;
+      font-size: 0.83rem;
+    }
+
+    /* ── Error banner ─────────────────────────────────────────────── */
+    #error-banner {
+      display: none;
+      margin-top: 16px;
+      padding: 12px 16px;
+      background: rgba(239,68,68,0.1);
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: 8px;
+      color: var(--danger);
+      font-size: 0.88rem;
+    }
+
+    /* ── Reset button ─────────────────────────────────────────────── */
+    #reset-btn {
+      display: none;
+      width: 100%;
+      margin-top: 12px;
+      padding: 10px;
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--muted);
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    #reset-btn:hover { border-color: var(--accent); color: var(--text); }
+  </style>
+</head>
+<body>
+<div class="card">
+  <h1>📧 Email Verifier</h1>
+  <p class="subtitle">Upload a CSV file, extract emails, and download only the valid ones.</p>
+
+  <!-- Drop zone -->
+  <div id="drop-zone">
+    <input type="file" id="file-input" accept=".csv,text/csv" />
+    <div class="drop-icon">📂</div>
+    <div class="drop-label">
+      <strong>Click to upload</strong> or drag &amp; drop your CSV here
+    </div>
+  </div>
+
+  <!-- File info -->
+  <div id="file-info">
+    <span class="icon">📄</span>
+    <div class="meta">
+      <div class="name" id="file-name"></div>
+      <div class="count" id="email-count"></div>
+    </div>
+    <button id="clear-btn" title="Remove file">✕</button>
+  </div>
+
+  <!-- Column picker (shown when multiple columns detected) -->
+  <div id="col-picker">
+    <label for="col-select">Which column contains email addresses?</label>
+    <select id="col-select"></select>
+  </div>
+
+  <!-- Typo warnings -->
+  <div id="typo-banner">
+    <strong>⚠ Possible typos detected</strong>
+    <div id="typo-list"></div>
+  </div>
+
+  <!-- Error banner -->
+  <div id="error-banner"></div>
+
+  <!-- Validate button -->
+  <button id="validate-btn" disabled>Validate Emails</button>
+
+  <!-- Progress -->
+  <div id="progress-section">
+    <div class="section-title">Verification Progress</div>
+    <div class="progress-bar-wrap">
+      <div class="progress-bar-fill" id="progress-fill"></div>
+    </div>
+    <div class="progress-meta">
+      <span id="status-text">Starting…</span>
+      <span id="progress-pct">0%</span>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div id="stats-grid">
+    <div class="stat-card"><div class="num c-valid" id="s-valid">0</div><div class="lbl">Valid</div></div>
+    <div class="stat-card"><div class="num c-invalid" id="s-invalid">0</div><div class="lbl">Invalid</div></div>
+    <div class="stat-card"><div class="num c-warn" id="s-catchall">0</div><div class="lbl">Catch-all</div></div>
+    <div class="stat-card"><div class="num c-muted" id="s-unknown">0</div><div class="lbl">Unknown / Other</div></div>
+    <div class="stat-card"><div class="num c-invalid" id="s-disposable">0</div><div class="lbl">Disposable</div></div>
+    <div class="stat-card"><div class="num c-warn" id="s-role">0</div><div class="lbl">Role-based</div></div>
+    <div class="stat-card"><div class="num c-muted" id="s-total">0</div><div class="lbl">Total</div></div>
+  </div>
+
+  <!-- Download -->
+  <div class="download-row" id="download-row">
+    <a id="download-good-btn" class="dl-btn" href="#" download="good_emails.csv">⬇ Good Emails</a>
+    <a id="download-bad-btn" class="dl-btn" href="#" download="bad_emails.csv">⬇ Bad Emails</a>
+  </div>
+
+  <!-- Reset -->
+  <button id="reset-btn">Start over</button>
+</div>
+
+<script>
+  // ── State ────────────────────────────────────────────────────────────────────
+  let parsedEmails = [];
+  let allRows      = [];
+  let headers      = [];
+  let pollTimer    = null;
+
+  // ── Elements ──────────────────────────────────────────────────────────────────
+  const dropZone    = document.getElementById('drop-zone');
+  const fileInput   = document.getElementById('file-input');
+  const fileInfo    = document.getElementById('file-info');
+  const fileName    = document.getElementById('file-name');
+  const emailCount  = document.getElementById('email-count');
+  const clearBtn    = document.getElementById('clear-btn');
+  const colPicker   = document.getElementById('col-picker');
+  const colSelect   = document.getElementById('col-select');
+  const errorBanner = document.getElementById('error-banner');
+  const typoBanner  = document.getElementById('typo-banner');
+  const typoList    = document.getElementById('typo-list');
+  const downloadRow    = document.getElementById('download-row');
+  const downloadGoodBtn = document.getElementById('download-good-btn');
+  const downloadBadBtn  = document.getElementById('download-bad-btn');
+  const validateBtn = document.getElementById('validate-btn');
+  const progressSec  = document.getElementById('progress-section');
+  const progressFill = document.getElementById('progress-fill');
+  const statusText  = document.getElementById('status-text');
+  const progressPct = document.getElementById('progress-pct');
+  const statsGrid   = document.getElementById('stats-grid');
+  const resetBtn    = document.getElementById('reset-btn');
+
+  // ── CSV Parser ────────────────────────────────────────────────────────────────
+  function parseCSV(text) {
+    const lines = text.trim().split(/\r?\n/);
+    if (!lines.length) return { headers: [], rows: [] };
+    const split = (line) => {
+      const result = [];
+      let cur = '', inQ = false;
+      for (let i = 0; i < line.length; i++) {
+        const c = line[i];
+        if (c === '"') { inQ = !inQ; continue; }
+        if (c === ',' && !inQ) { result.push(cur.trim()); cur = ''; continue; }
+        cur += c;
+      }
+      result.push(cur.trim());
+      return result;
+    };
+    const hdr = split(lines[0]);
+    const rows = lines.slice(1).filter(l => l.trim()).map(split);
+    return { headers: hdr, rows };
+  }
+
+  function detectEmailColumn(headers, rows) {
+    const sample = rows.slice(0, 20);
+    const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    let best = -1, bestScore = 0;
+    headers.forEach((h, i) => {
+      let score = 0;
+      if (/email|e-mail|mail/i.test(h)) score += 10;
+      sample.forEach(r => { if (r[i] && emailRe.test(r[i].trim())) score++; });
+      if (score > bestScore) { bestScore = score; best = i; }
+    });
+    return best === -1 ? 0 : best;
+  }
+
+  function extractEmails(colIndex) {
+    const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return allRows
+      .map(r => (r[colIndex] || '').trim())
+      .filter(e => emailRe.test(e));
+  }
+
+  // ── File handling ─────────────────────────────────────────────────────────────
+  function handleFile(file) {
+    if (!file || !file.name.toLowerCase().endsWith('.csv')) {
+      showError('Please upload a .csv file.');
+      return;
+    }
+    hideError();
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const { headers: hdr, rows } = parseCSV(e.target.result);
+      allRows  = rows;
+      headers  = hdr;
+
+      // Build column picker
+      colSelect.innerHTML = '';
+      const autoCol = detectEmailColumn(hdr, rows);
+
+      if (hdr.length === 0) {
+        // No header row — treat first column as emails
+        const col = document.createElement('option');
+        col.value = 0; col.textContent = 'Column 1';
+        colSelect.appendChild(col);
+        colPicker.style.display = 'none';
+      } else {
+        hdr.forEach((h, i) => {
+          const opt = document.createElement('option');
+          opt.value = i; opt.textContent = h || `Column ${i + 1}`;
+          if (i === autoCol) opt.selected = true;
+          colSelect.appendChild(opt);
+        });
+        colPicker.style.display = hdr.length > 1 ? 'block' : 'none';
+      }
+
+      updateEmailList();
+      fileName.textContent = file.name;
+      fileInfo.style.display = 'flex';
+    };
+    reader.readAsText(file);
+  }
+
+  function updateEmailList() {
+    parsedEmails = extractEmails(parseInt(colSelect.value, 10));
+    emailCount.textContent = `${parsedEmails.length.toLocaleString()} email address${parsedEmails.length !== 1 ? 'es' : ''} found`;
+    validateBtn.disabled = parsedEmails.length === 0;
+  }
+
+  colSelect.addEventListener('change', updateEmailList);
+
+  // Drag & drop
+  dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault(); dropZone.classList.remove('drag-over');
+    handleFile(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change', () => handleFile(fileInput.files[0]));
+
+  clearBtn.addEventListener('click', () => {
+    fileInput.value = '';
+    parsedEmails = []; allRows = []; headers = [];
+    fileInfo.style.display = 'none';
+    colPicker.style.display = 'none';
+    validateBtn.disabled = true;
+    hideError();
+  });
+
+  // ── Validation flow ───────────────────────────────────────────────────────────
+  validateBtn.addEventListener('click', async () => {
+    if (!parsedEmails.length) return;
+    hideError();
+    validateBtn.disabled = true;
+    progressSec.style.display = 'block';
+    statsGrid.style.display = 'none';
+    downloadRow.style.display = 'none';
+    resetBtn.style.display = 'none';
+    setProgress(0, 'Submitting job…');
+
+    try {
+      const res = await fetch('/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ emails: parsedEmails }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || `Server error ${res.status}`);
+      }
+      const { job_id, queued, invalid_syntax, typo_suggestions } = await res.json();
+
+      // Show typo warnings immediately
+      if (typo_suggestions && typo_suggestions.length > 0) {
+        typoList.innerHTML = typo_suggestions.slice(0, 5).map(t =>
+          `<div class="typo-row"><code>${t.original}</code> → did you mean <code>${t.suggestion}</code>?</div>`
+        ).join('') + (typo_suggestions.length > 5
+          ? `<div class="typo-row" style="color:var(--muted)">…and ${typo_suggestions.length - 5} more</div>` : '');
+        typoBanner.style.display = 'block';
+      }
+
+      setProgress(0, `Job created — ${queued.toLocaleString()} emails queued…`);
+      pollStatus(job_id, invalid_syntax || []);
+    } catch (err) {
+      showError(err.message);
+      validateBtn.disabled = false;
+      progressSec.style.display = 'none';
+    }
+  });
+
+  function pollStatus(jobId, invalidSyntax) {
+    pollTimer = setInterval(async () => {
+      try {
+        const res = await fetch(`/status/${jobId}`);
+        if (!res.ok) return;
+        const s = await res.json();
+        const pct = s.progress_pct ?? 0;
+        setProgress(pct, stateLabel(s.state, s.completed, s.total));
+
+        if (s.state === 'completed' || s.state === 'failed') {
+          clearInterval(pollTimer);
+          fetchResults(jobId, invalidSyntax);
+        }
+      } catch (_) { /* keep polling */ }
+    }, 1500);
+  }
+
+  async function fetchResults(jobId, invalidSyntax) {
+    setProgress(100, 'Processing results…');
+    try {
+      const res = await fetch(`/result/${jobId}`);
+      if (!res.ok) throw new Error('Failed to fetch results');
+      const data = await res.json();
+      showResults(data, invalidSyntax);
+    } catch (err) {
+      showError(err.message);
+      resetBtn.style.display = 'block';
+    }
+  }
+
+  function showResults(data, invalidSyntax) {
+    const results  = data.results || [];
+
+    const valid      = results.filter(r => r.status === 'VALID');
+    const invalid    = results.filter(r => r.status === 'INVALID').length + invalidSyntax.length;
+    const catchAll   = results.filter(r => r.status === 'CATCH_ALL').length;
+    const disposable = results.filter(r => r.is_disposable).length;
+    const roleBased  = results.filter(r => r.is_role_based && r.status !== 'INVALID').length;
+    const other      = results.length - valid.length - (invalid - invalidSyntax.length) - catchAll;
+
+    document.getElementById('s-valid').textContent      = valid.length.toLocaleString();
+    document.getElementById('s-invalid').textContent    = Math.max(0, invalid).toLocaleString();
+    document.getElementById('s-catchall').textContent   = catchAll.toLocaleString();
+    document.getElementById('s-unknown').textContent    = Math.max(0, other).toLocaleString();
+    document.getElementById('s-disposable').textContent = disposable.toLocaleString();
+    document.getElementById('s-role').textContent       = roleBased.toLocaleString();
+    document.getElementById('s-total').textContent      = results.length.toLocaleString();
+
+    statsGrid.style.display = 'grid';
+    setProgress(100, `Done — ${valid.length.toLocaleString()} valid email${valid.length !== 1 ? 's' : ''} found`);
+
+    // Good emails CSV (VALID only — clean list)
+    const goodCsv = 'email\n' + valid.map(r => r.email).join('\n');
+    const goodBlob = new Blob([goodCsv], { type: 'text/csv' });
+    downloadGoodBtn.href = URL.createObjectURL(goodBlob);
+    downloadGoodBtn.download = 'good_emails.csv';
+    downloadGoodBtn.textContent = `⬇ Good Emails (${valid.length.toLocaleString()})`;
+
+    // Bad emails CSV (non-VALID results + syntax-invalid)
+    const badResults = results.filter(r => r.status !== 'VALID');
+    const badRows = [
+      ...badResults.map(r => `${r.email},${r.status}`),
+      ...invalidSyntax.map(e => `${e},SYNTAX_INVALID`),
+    ];
+    const badCount = badRows.length;
+    const badCsv = 'email,status\n' + badRows.join('\n');
+    const badBlob = new Blob([badCsv], { type: 'text/csv' });
+    downloadBadBtn.href = URL.createObjectURL(badBlob);
+    downloadBadBtn.download = 'bad_emails.csv';
+    downloadBadBtn.textContent = `⬇ Bad Emails (${badCount.toLocaleString()})`;
+
+    downloadRow.style.display = 'flex';
+    resetBtn.style.display = 'block';
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────────
+  function setProgress(pct, label) {
+    progressFill.style.width = pct + '%';
+    statusText.textContent   = label;
+    progressPct.textContent  = Math.round(pct) + '%';
+  }
+
+  function stateLabel(state, done, total) {
+    if (state === 'pending')    return 'Waiting in queue…';
+    if (state === 'processing') return `Verifying… (${(done || 0).toLocaleString()} / ${(total || 0).toLocaleString()})`;
+    if (state === 'completed')  return 'Verification complete';
+    if (state === 'failed')     return 'Job failed';
+    return state;
+  }
+
+  function showError(msg) {
+    errorBanner.textContent = '⚠ ' + msg;
+    errorBanner.style.display = 'block';
+  }
+  function hideError() {
+    errorBanner.style.display = 'none';
+  }
+
+  resetBtn.addEventListener('click', () => {
+    if (pollTimer) clearInterval(pollTimer);
+    fileInput.value = '';
+    parsedEmails = []; allRows = []; headers = [];
+    fileInfo.style.display    = 'none';
+    colPicker.style.display   = 'none';
+    progressSec.style.display = 'none';
+    statsGrid.style.display   = 'none';
+    downloadRow.style.display = 'none';
+    resetBtn.style.display    = 'none';
+    typoBanner.style.display  = 'none';
+    typoList.innerHTML        = '';
+    validateBtn.disabled = true;
+    hideError();
+  });
+</script>
+</body>
+</html>

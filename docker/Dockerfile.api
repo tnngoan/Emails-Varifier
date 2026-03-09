@@ -1,0 +1,43 @@
+# ─── Build Stage ─────────────────────────────────────────────────────────────
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Install dependencies first (layer-cached unless package.json changes)
+COPY package*.json ./
+RUN npm ci --include=dev
+
+# Copy source and compile
+COPY tsconfig.json ./
+COPY src ./src
+RUN npm run build
+
+# ─── Production Stage ─────────────────────────────────────────────────────────
+FROM node:20-alpine AS production
+
+# Security: run as non-root user
+RUN addgroup -g 1001 -S appgroup && \
+    adduser  -u 1001 -S appuser -G appgroup
+
+WORKDIR /app
+
+# Install only production dependencies
+COPY package*.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+
+# Copy compiled output from builder
+COPY --from=builder /app/dist ./dist
+
+# Change ownership
+RUN chown -R appuser:appgroup /app
+USER appuser
+
+EXPOSE 3000
+
+ENV NODE_ENV=production
+
+# Health check — polls /health every 30s
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+  CMD wget -qO- http://localhost:3000/health || exit 1
+
+CMD ["node", "dist/api/server.js"]

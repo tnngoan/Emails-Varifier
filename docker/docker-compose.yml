@@ -1,0 +1,147 @@
+version: '3.9'
+
+# ─── Email Verifier — Docker Compose ─────────────────────────────────────────
+#
+# Services:
+#   postgres  — result storage
+#   redis     — job queue + domain rate-limit semaphores
+#   api       — Fastify HTTP server (POST /verify, GET /status, GET /result)
+#   worker    — BullMQ email verification workers (scale with --scale worker=N)
+#   migrate   — one-shot DB migration (runs schema.sql then exits)
+#
+# Quickstart:
+#   docker-compose up -d postgres redis
+#   docker-compose run --rm migrate
+#   docker-compose up -d api worker
+#   docker-compose up --scale worker=4   # 4 parallel worker processes
+
+networks:
+  verifier-net:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+
+services:
+  # ── PostgreSQL ───────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       email_verifier
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - verifier-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout:  5s
+      retries:  5
+
+  # ── Redis ────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: >
+      redis-server
+        --maxmemory 512mb
+        --maxmemory-policy allkeys-lru
+        --save 60 1000
+        --appendonly yes
+    volumes:
+      - redis-data:/data
+    networks:
+      - verifier-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout:  5s
+      retries:  5
+
+  # ── Schema Migration (one-shot) ───────────────────────────────────────────────
+  migrate:
+    image: postgres:16-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - verifier-net
+    volumes:
+      - ../src/db/schema.sql:/schema.sql:ro
+    environment:
+      PGPASSWORD: postgres
+    command: >
+      psql -h postgres -U postgres -d email_verifier -f /schema.sql
+    restart: "no"
+
+  # ── API Server ────────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - verifier-net
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV:              production
+      API_HOST:              0.0.0.0
+      API_PORT:              "3000"
+      DATABASE_URL:          postgresql://postgres:postgres@postgres:5432/email_verifier
+      REDIS_URL:             redis://redis:6379
+      QUEUE_NAME:            email-verification
+      MAX_EMAILS_PER_REQUEST: "100000"
+      LOG_LEVEL:             info
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
+      interval: 30s
+      timeout:  10s
+      retries:  3
+
+  # ── Verification Worker ───────────────────────────────────────────────────────
+  # Scale workers with:  docker-compose up --scale worker=4
+  #
+  # IMPORTANT: The worker host MUST have:
+  #   - Outbound port 25 open (contact your cloud provider / VPS host)
+  #   - A PTR/rDNS record for the public IP
+  #   - A static IP to avoid spam-list churn
+  worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - verifier-net
+    environment:
+      NODE_ENV:              production
+      DATABASE_URL:          postgresql://postgres:postgres@postgres:5432/email_verifier
+      REDIS_URL:             redis://redis:6379
+      QUEUE_NAME:            email-verification
+      # SMTP identity — must match your public PTR record
+      SMTP_HELO_HOST:        verifier.yourdomain.com
+      SMTP_FROM_ADDRESS:     probe@verifier.yourdomain.com
+      SMTP_TIMEOUT_MS:       "8000"
+      SMTP_PORT:             "25"
+      # Worker concurrency per process instance
+      WORKER_CONCURRENCY:    "50"
+      WORKER_MAX_RETRIES:    "3"
+      # Per-domain rate limiting
+      DOMAIN_RATE_WINDOW_SEC:   "60"
+      DEFAULT_MAX_CONCURRENT:   "10"
+    # Allow graceful drain of in-flight jobs
+    stop_grace_period: 60s
