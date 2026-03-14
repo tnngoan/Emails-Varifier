@@ -3,12 +3,12 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm ci --include=dev
+COPY package*.json yarn.lock ./
+RUN yarn install --frozen-lockfile
 
 COPY tsconfig.json ./
 COPY src ./src
-RUN npm run build
+RUN yarn build
 
 # ─── Production Stage ─────────────────────────────────────────────────────────
 FROM node:20-alpine AS production
@@ -24,8 +24,8 @@ RUN addgroup -g 1001 -S appgroup && \
 
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+COPY package*.json yarn.lock ./
+RUN yarn install --frozen-lockfile --production && yarn cache clean
 
 COPY --from=builder /app/dist ./dist
 

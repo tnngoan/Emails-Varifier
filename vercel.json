@@ -1,0 +1,9 @@
+{
+  "outputDirectory": "public",
+  "rewrites": [
+    { "source": "/verify",          "destination": "$API_HOST/verify" },
+    { "source": "/status/:job_id",  "destination": "$API_HOST/status/:job_id" },
+    { "source": "/result/:job_id",  "destination": "$API_HOST/result/:job_id" },
+    { "source": "/health",          "destination": "$API_HOST/health" }
+  ]
+}

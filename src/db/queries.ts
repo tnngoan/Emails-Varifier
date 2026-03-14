@@ -85,7 +85,7 @@ export async function getJobResult(jobId: string): Promise<JobResultResponse | n
             typo_suggestion, gravatar_exists, risk_score
      FROM email_results
      WHERE job_id = $1
-     ORDER BY created_at ASC`,
+     ORDER BY completed_at DESC NULLS LAST`,
     [jobId]
   );
 
